@@ -8,8 +8,8 @@ import os
 import _init_path
 
 from configs import cfg, update_config  # cfg 
-from utils.utils import * 
-from utils.function import train 
+from helpers.utils import * 
+from helpers.function import train 
 from models import get_model
 from datasets.camvid_datasets import Camvid
 
@@ -34,34 +34,34 @@ if __name__ == '__main__':
     logger.info(cfg)
     init_seed(cfg.seed)
 
-    train_dataset = Camvid(root = cfg.dataset_dir,
+    train_dataset = Camvid(root = cfg.dataset.dataset_dir,
                           split = 'train',
                           is_aug = True,
-                          img_size = (cfg.img_width, cfg.img_height)
+                          img_size = (cfg.dataset.img_width, cfg.dataset.img_height)
                         ) # get_dataset(cfg.dataset_name)
-    logger.info('train dataset: {} num_images: {}'.format(cfg.dataset_name, len(train_dataset)))
+    logger.info('train dataset: {} num_images: {}'.format(cfg.dataset.name, len(train_dataset)))
     logger.info('class weughts: {}'.format(train_dataset.class_weights))
     
-    val_dataset = Camvid(root = cfg.dataset_dir,
+    val_dataset = Camvid(root = cfg.dataset.dataset_dir,
                             split = 'val',
                             is_aug = False,
-                            img_size = (cfg.img_width, cfg.img_height),
+                            img_size = (cfg.dataset.img_width, cfg.dataset.img_height),
                             class_weights = train_dataset.class_weights
                             ) # get_dataset(cfg.dataset_name)
 
 
 
     dataloaders = {
-                    'train': DataLoader(train_dataset, batch_size = cfg.batch_size, shuffle = True, \
+                    'train': DataLoader(train_dataset, batch_size = cfg.training.batch_size, shuffle = True, \
                                              num_workers = cfg.num_workers, pin_memory = True), 
-                    'valid': DataLoader(val_dataset, batch_size = cfg.batch_size, shuffle = False, \
+                    'valid': DataLoader(val_dataset, batch_size = cfg.training.batch_size, shuffle = False, \
                                              num_workers = cfg.num_workers, pin_memory = True)
                     }
     
 
 
-    if cfg.model == 'bayesian_tiramisu':
-        model = get_model(cfg.model, cfg.n_classes)
+    if cfg.model.type == 'bayesian_tiramisu':
+        model = get_model(cfg.model.type, cfg.dataset.num_classes)
 
 
     device = torch.device('cuda' if torch.cuda.is_available() and cfg.device != 'cpu' else 'cpu')
@@ -70,20 +70,22 @@ if __name__ == '__main__':
         model = nn.DataParallel(model, device_ids = cfg.gpus)
     model = model.to(device)
 
-    cfg.start_epoch = 0 
-    if cfg.opt == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), lr = cfg.lr, momentum = 0.9, weight_decay = cfg.weight_decay)
-    elif cfg.opt == 'rms':
-        optimizer = torch.optim.RMSprop(model.parameters(), lr = cfg.lr, momentum = 0.9, weight_decay = cfg.weight_decay)
+    cfg.training.start_epoch = 0 
+    if cfg.training.opt == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), lr = cfg.training.lr, momentum = 0.9, weight_decay = cfg.training.weight_decay)
+    elif cfg.training.opt == 'rms':
+        optimizer = torch.optim.RMSprop(model.parameters(), lr = cfg.training.lr, momentum = 0.9, weight_decay = cfg.training.weight_decay)
 
-    cur_loss = torch.float('inf')
-    if cfg.resume:
-        if os.path.exists(cfg.resume_path) == False:
+
+    cur_loss = float('inf')
+
+    if cfg.training.resume:
+        if os.path.exists(cfg.training.resume_path) == False:
             raise ValueError('resume_path should not be empty')
-        logger.info('resuming finetune from {}'.format(cfg.resume_path))
-        checkpoint = torch.load(cfg.resume_path)
+        logger.info('resuming finetune from {}'.format(cfg.training.resume_path))
+        checkpoint = torch.load(cfg.training.resume_path)
         if checkpoint.endswith('.pth'):
-            cfg.start_epoch = checkpoint['epoch']
+            cfg.training.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             cur_loss = checkpoint['loss']
@@ -91,8 +93,8 @@ if __name__ == '__main__':
         else:
             model = torch.load(checkpoint)
 
-        logger.info('resuming finetune from {} done'.format(cfg.resume_path))
-        logger.info('start_epoch: {}'.format(cfg.start_epoch))
+        logger.info('resuming finetune from {} done'.format(cfg.training.resume_path))
+        logger.info('start_epoch: {}'.format(cfg.training.start_epoch))
     
     criterion = nn.CrossEntropyLoss(weight = torch.tensor(train_dataset.class_weights).to(device))
     train(cfg, dataloaders, model, optimizer, criterion, \
