@@ -1,0 +1,45 @@
+cudnn:
+  benchmark: true
+  deterministic: false
+  enabled: true
+dataset:
+  dataset_dir: /home/linlin/dataset/camvid_video
+  img_height: 128
+  img_width: 64
+  name: camvid
+  num_classes: 12
+  void_class: 0
+device: gpu
+gpus:
+- 0
+model:
+  is_bayesian: true
+  name: bayesian_tiramisu_lr0.01_b4
+  type: bayesian_tiramisu
+num_workers: 8
+output_dir: /home/linlin/workspace/Efficient_p3/outputs
+seed: 705
+test:
+  acqu_func: all
+  alpha_error: 0.5
+  alpha_normal: 0.2
+  error_thres: 40
+  flow: DF
+  flow_model_path: ''
+  sample_num: 4
+  save_output: false
+  test_model_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/bayesian_tiramisu_lr0.001_b4/checkpoint.pth.tar
+  test_video: false
+  use_warp: true
+training:
+  batch_size: 2
+  epochs: 100
+  log_batch_interval: 100
+  lr: 0.005
+  opt: rms
+  resume: false
+  resume_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/bayesian_tiramisu_lr0.01_b4/checkpoint.pt
+  save_epoch_interval: 1
+  weight_decay: 0.0001
+validation:
+  save_epoch_interval: 50
