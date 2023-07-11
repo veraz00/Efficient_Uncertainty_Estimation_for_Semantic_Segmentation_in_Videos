@@ -1,9 +1,14 @@
 __*__
 *_env 
 outputs
-
+DF
 
 # notes
 temp*
+
+# model 
+*.pt
+*.pth.tar 
+
 
 !__init__.py
