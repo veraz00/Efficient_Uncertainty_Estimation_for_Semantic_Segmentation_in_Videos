@@ -1,0 +1,19 @@
+torch
+torchvision
+torchmetrics 
+tqdm
+numpy
+argparse
+opencv-python
+yacs
+albumentations
+icecream
+chainer 
+flow-vis
+
+# debug 
+icecream
+
+
+# df
+opencv-contrib-python
