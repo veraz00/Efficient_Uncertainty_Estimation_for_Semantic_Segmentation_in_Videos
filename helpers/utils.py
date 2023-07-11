@@ -1,7 +1,7 @@
 import logging 
 import os 
 import time 
-
+import icecream
 import numpy as np
 import cv2 
 import torch.nn as nn 
@@ -12,7 +12,7 @@ import configs.constants as C
 def create_logger(cfg, phase = 'train'):
     print('create logger')
 
-    log_dir = os.path.join(cfg.output_dir, cfg.dataset_name, cfg.model_name)
+    log_dir = os.path.join(cfg.output_dir, cfg.dataset.name, cfg.model.name)
     os.makedirs(log_dir, exist_ok = True)
 
     time_str = time.strftime('%Y-%m-%d-%H-%M')
@@ -68,7 +68,8 @@ def id_to_rgb(label, n_classes):
 
     return rgb_label
 
-import icecream
+
+
 def save_pred(pred, label, image, sv_path, img_name, n_classes):
     """
     pred: 224, 224 # h, w

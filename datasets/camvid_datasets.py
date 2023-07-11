@@ -62,13 +62,13 @@ class Camvid(data.Dataset):
             os.makedirs(os.path.dirname(os.path.join(C.save_check, self.imgs[index])), exist_ok = True)
 
             rgb_label = id_to_rgb(label, num_classes= 12)
-            cv2.imwrite(os.path.join(C.save_check,  self.imgs[index]), np.array(rgb_label))
+            cv2.imwrite(os.path.join(C.save_check,  self.imgs[index].split('.')[0] + '_label.png'), np.array(rgb_label))
             cv2.imwrite(os.path.join(C.save_check, self.imgs[index].split('.')[0] + '_img.png'), np.array(img))
 
 
 
         np_img = basic_transform(img)
-        np_label = np.array(label).astype('int32')
+        np_label = label.transpose(-1, -2).astype('int32')
         
         return np_img, np_label, self.imgs[index]
     

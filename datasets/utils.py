@@ -49,9 +49,9 @@ def basic_transform(np_image):
 
 
 
-def id_to_rgb(label, n_classes):
+def id_to_rgb(label, num_classes):
     rgb_label = np.zeros((label.shape[0], label.shape[1], 3))
-    for i in range(n_classes):
+    for i in range(num_classes):
         rgb_label[label == i] = C.index_to_color[i]
     rgb_label = rgb_label.astype('uint8')
 
