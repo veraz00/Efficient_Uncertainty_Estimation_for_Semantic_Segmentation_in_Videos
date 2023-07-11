@@ -4,9 +4,7 @@ import timeit
 import gc
 import json 
 import torch.nn.functional as F 
-# from pytorch_flownet2.FlowNet2_src import FlowNet2, flow_to_image
-
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchmetrics import ConfusionMatrix
 import icecream
 import _init_path
@@ -23,7 +21,9 @@ def train(args, dataloaders, model, optimizer, criterion, \
     torch.cuda.empty_cache()
     gc.collect()
     start = timeit.default_timer()
-    for epoch in range(args.start_epoch, args.epochs):
+    scheduler = ReduceLROnPlateau(optimizer, 'min')
+
+    for epoch in range(args.training.start_epoch, args.training.epochs):
         logger.info(f'Start epoch {epoch}')
         
         for phase in ['train', 'valid']:
@@ -45,9 +45,10 @@ def train(args, dataloaders, model, optimizer, criterion, \
                     loss.backward()
                     optimizer.step()
 
-                if phase == 'valid' and epoch % args.save_epoch_interval == 0:
-                    torch.save(model, os.path.join(output_dir, f'checkpoint.pt'))
+                if phase == 'valid' and epoch % args.validation.save_epoch_interval == 0:
+                    scheduler.step(loss)
 
+                    torch.save(model, os.path.join(output_dir, f'checkpoint.pt'))
                     checkpoint_tar_path = os.path.join(
                         output_dir, "checkpoint.pth.tar"
                     )
@@ -60,6 +61,7 @@ def train(args, dataloaders, model, optimizer, criterion, \
                         },
                         checkpoint_tar_path,
                     )
+
                     if loss.item() < cur_loss:
                         torch.save(model, os.path.join(output_dir, "best.pt"))
                         cur_loss = loss
@@ -79,9 +81,9 @@ def train(args, dataloaders, model, optimizer, criterion, \
                         )
 
 
-                if i % args.log_batch_interval == 0:
+                if i > 0 and (i % args.training.log_batch_interval == 0 or i == len(dataloaders[phase])-1):
                     end_training_time = timeit.default_timer()
-                    logger.info(f'Phase: {phase}\tEpoch: [{epoch}][{i}/{len(dataloaders[phase])}]\tLoss {loss.item()}\tTraining Time:{end_training_time-start_training_time}')
+                    logger.info(f'Phase: {phase}\tEpoch: [{epoch}][{i}/{len(dataloaders[phase])-1}]\tLoss {loss.item()}\tTraining Time:{end_training_time-start_training_time}')
                     start_training_time = end_training_time
                     
     end = timeit.default_timer()
@@ -120,7 +122,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
     alpha_normal = args.alpha_normal 
     alpha_error = args.alpha_error 
 
-    prev_img = None
+    prev_img, prev_output_mean = None, None
     gts, preds, uncts = [], [], []
     uncts_r, uncts_e, uncts_v, uncts_b = [], [], [], []
     video_name = ''
@@ -175,14 +177,15 @@ def get_test(args, model, split, device, logger, sv_pred = True):
                                     save_path = os.path.join(C.save_optical_flow, frame_name))  # h, w, 2
              
                 warp_img = warp_frame(prev_img, flow, save_path = os.path.join(C.save_warped, frame_name)) # h, w, c
-                # warp_frame = image_warp(prev_frame, flow, output_path = os.path.join(C.warped, frame_name))  # b, h, w, c
       
                 reconstruction_loss = np.abs(warp_img - img).mean()
                 mask = (reconstruction_loss < threshold) * 1
                 alpha = mask * alpha_normal + (1-mask)*alpha_error
 
-                # output_index = torch.argmax(output_mean, axis = 1).squeeze().T # h, w 
-                output_np_warped = warp_prediction(output_mean.transpose(-1, -2), np2tensor(flow, device = device).unsqueeze(0))  # prev 
+
+                output_np_warped = warp_prediction(prev_output_mean.transpose(-1, -2), np2tensor(flow, device = device).unsqueeze(0))  
+                # n, c, h, w, 
+                # flow: n, h, w, 2 
                 output_mean_warped = output_np_warped.transpose(-1, -2)
                 icecream.ic(output_mean_warped.shape)
 
@@ -195,6 +198,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
 
             prev_img = img
+            prev_output_mean = output_mean
 
 
         if args.acqu_func != 'all':
