@@ -93,14 +93,11 @@ def warp_frame(prev, flow, save_path = None):
 
 from .utils import * 
 def generate_meshgrid(flow):
-    h, w = flow.shape[1:-1]
-    icecream.ic(flow.shape)
+    h, w = flow.shape[1], flow.shape[2]
     y = torch.arange(0, h).unsqueeze(1).repeat(1, w).float() / (h - 1) * 2 - 1
-    x = torch.arange(0, w).unsqueeze(0).repeat(h, 1).float() / (w - 1) * 2 - 1
-    icecream.ic(x.shape, y.shape)
+    x = torch.arange(0, w).unsqueeze(0).repeat(h, 1).float() / (w - 1) * 2 - 1 # 1, 128, 64  = n, h, w
 
-    mesh_grid = torch.stack([x, y], dim=2).unsqueeze(0).repeat(flow.size(0), 1, 1, 1).to(device=flow.device)
-    icecream.ic(mesh_grid.shape)
+    mesh_grid = torch.stack([x, y], dim=2).unsqueeze(0).repeat(flow.size(0), 1, 1, 1).to(device=flow.device) # n, h, w, 2 
 
     return mesh_grid
 
@@ -116,7 +113,7 @@ def warp_prediction(prev_prediction, flow):
     icecream.ic(prev_prediction.shape)
     icecream.ic(flow.shape)
     h, w = flow.shape[:2]
-    grid = generate_meshgrid(flow)
+    grid = generate_meshgrid(flow)  # n, h, w, 2
     flow = flow.clone()
     flow[..., 0] = flow[..., 0] / (w / 2)
     flow[..., 1] = flow[..., 1] / (h / 2)
