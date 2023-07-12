@@ -4,7 +4,7 @@ import timeit
 import gc
 import json 
 import torch.nn.functional as F 
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from torchmetrics import ConfusionMatrix
 import icecream
 import _init_path
@@ -16,14 +16,19 @@ import configs.constants as C
 
 
 def train(args, dataloaders, model, optimizer, criterion, \
-          cur_miou, device, logger, output_dir):
+          cur_miou, start_epoch, device, logger, output_dir):
 
     torch.cuda.empty_cache()
     gc.collect()
     start = timeit.default_timer()
-    # scheduler = ReduceLROnPlateau(optimizer, 'min')
 
-    for epoch in range(args.training.start_epoch, args.training.epochs):
+    # optimizer.param_groups[0]["lr"] = args.training.lr
+    # if len(optimizer.param_groups) == 2:
+    #     optimizer.param_groups[1]["lr"] = args.training.lr
+    # scheduler = ReduceLROnPlateau(optimizer, 'max')
+    scheduler = StepLR(optimizer, step_size = 30, gamma = 0.5)
+
+    for epoch in range(start_epoch, args.training.epochs):
         logger.info(f'Start epoch {epoch}')
         
         for phase in ['train', 'valid']:
@@ -63,7 +68,8 @@ def train(args, dataloaders, model, optimizer, criterion, \
                                 Time:{end_training_time-start_training_time}')
                     start_training_time = end_training_time
                     
-
+        if phase == 'valid':
+            scheduler.step()  # pass it by step_size times, lr *= gamma
 
         if epoch % args.validation.save_epoch_interval == 0:
             metrics_valid, cm_valid = calculation_from_confusion_matrix(cm)
@@ -80,8 +86,8 @@ def train(args, dataloaders, model, optimizer, criterion, \
                     "state_dict": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "last_epoch":epoch,
-                    "miou": metrics_valid['AVG_IOU'],
-                    'lr':optimizer.param_groups[-1]['lr']
+                    "miou": cur_miou,
+                    # 'lr':optimizer.param_groups[-1]['lr']
                 },
                 checkpoint_tar_path,
             )
@@ -100,8 +106,8 @@ def train(args, dataloaders, model, optimizer, criterion, \
                         "state_dict": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "last_epoch": epoch,
-                        "miou": metrics_valid['AVG_IOU'],
-                        'lr':optimizer.param_groups[-1]['lr']
+                        "miou": cur_miou,
+                        # 'lr':optimizer.param_groups[-1]['lr']
                     },
                     best_tar_path,
                 )
@@ -120,7 +126,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
     frame_names = json.load(open(C.data_split_path))['val']['labeled']
     
-    frame_names = list(frame_names)
+    frame_names = list(frame_names)[:5]
     label_names = list(map(lambda x: x.replace(split, split + 'annot'), frame_names))
     model.eval()
 
@@ -171,8 +177,9 @@ def get_test(args, model, split, device, logger, sv_pred = True):
         # img_tensor_or = image_process(img, normalize = False) # b, c, w, h,
 
         T = args.test.sample_num
-        for t in range(T):
+        for t in range(1):
             output = F.softmax(model(img_tensor), dim = 1)
+            print('get output')
             if t == 0:
                 output_mean = output * 0
                 output_square = output * 0
@@ -187,6 +194,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
 
         if args.test.use_warp: # the 2nd and other frames 
+            logger.info('use warp to test')
 
             
 
@@ -201,9 +209,15 @@ def get_test(args, model, split, device, logger, sv_pred = True):
              
                 warp_img = warp_frame(prev_img, flow, save_path = os.path.join(C.save_warped, frame_name)) # h, w, c
       
-                reconstruction_loss = np.abs(warp_img - img).mean()
-                mask = (reconstruction_loss < threshold) * 1
+                reconstruction_loss = np.abs(warp_img - img).mean(axis = -1).T
+                # reconstruction_loss = np.expand_dims(reconstruction_loss, axis = (0, 1)) # 64, 128, 
+                # reconstruction_loss = np2tensor(reconstruction_loss, device)
+                icecream.ic(np.count_nonzero(reconstruction_loss < threshold) * 1)
+                icecream.ic(np.count_nonzero(reconstruction_loss < threshold) * 1)
+                mask = np2tensor((reconstruction_loss < threshold) * 1, device=device)
+
                 alpha = mask * alpha_normal + (1-mask)*alpha_error
+                icecream.ic(alpha.shape, output_mean.shape)
 
 
                 output_np_warped = warp_prediction(prev_output_mean.transpose(-1, -2), np2tensor(flow, device = device).unsqueeze(0))  
@@ -225,10 +239,10 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
 
         if args.test.acqu_func != 'all':
-            unc_map = acquisition_func(args.acqu_func, output_mean,\
+            unc_map = acquisition_func(args.test.acqu_func, output_mean,\
                                    square_mean=square_mean, entropy_mean=entropy_mean) 
             unc_map = unc_map.squeeze().cpu().numpy()
-            uncts.append(unc_map)
+            uncts.append(torch2np(unc_map))
         else:
             unc_map_r = acquisition_func('r', output_mean,\
                                     square_mean=square_mean, entropy_mean=entropy_mean)
@@ -242,14 +256,14 @@ def get_test(args, model, split, device, logger, sv_pred = True):
             # unc_map_e = unc_map_e.squeeze().cpu().numpy()
             # unc_map_b = unc_map_b.squeeze().cpu().numpy()
             # unc_map_v = unc_map_v.squeeze().cpu().numpy()
-            uncts_r.append(unc_map_r)
-            uncts_e.append(unc_map_e)
-            uncts_b.append(unc_map_b)
-            uncts_v.append(unc_map_v)
+            uncts_r.append(torch2np(unc_map_r))
+            uncts_e.append(torch2np(unc_map_e))
+            uncts_b.append(torch2np(unc_map_b))
+            uncts_v.append(torch2np(unc_map_v))
 
 
             
-            # prev_frame_gray = img_gray
+        #     # prev_frame_gray = img_gray
 
 
         # pred_np = np.asarray(np.argmax(torch2np(output_mean), axis=1), dtype=np.uint8).transpose(0, 2, 1)
@@ -282,13 +296,19 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
 
     out_name = 'uncts'
-    if args.acqu_func != 'all':
-        np.save(os.path.join(args.out_unct_dir, out_name), uncts)
+    if args.test.acqu_func != 'all':
+        os.makedirs(args.test.out_unct_dir, exist_ok= True)
+        np.save(os.path.join(args.test.out_unct_dir, out_name), uncts)
     else:
-        np.save(os.path.join(args.out_unct_dir_r, out_name), uncts_r)
-        np.save(os.path.join(args.out_unct_dir_e, out_name), uncts_e)
-        np.save(os.path.join(args.out_unct_dir_b, out_name), uncts_b)
-        np.save(os.path.join(args.out_unct_dir_v, out_name), uncts_v)
+        os.makedirs(args.test.out_unct_dir_r, exist_ok= True)
+        os.makedirs(args.test.out_unct_dir_e, exist_ok= True)
+        os.makedirs(args.test.out_unct_dir_b, exist_ok= True)
+        os.makedirs(args.test.out_unct_dir_v, exist_ok= True)
+
+        np.save(os.path.join(args.test.out_unct_dir_r, out_name), uncts_r)
+        np.save(os.path.join(args.test.out_unct_dir_e, out_name), uncts_e)
+        np.save(os.path.join(args.test.out_unct_dir_b, out_name), uncts_b)
+        np.save(os.path.join(args.test.out_unct_dir_v, out_name), uncts_v)
 
     metrices, cm_t = calculation_from_confusion_matrix(cm)
     mean_IoU = metrices['AVG_IOU']
