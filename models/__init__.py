@@ -1,4 +1,5 @@
 from .tiramisu import Tiramisu103
+from .utils import * 
 
 def get_model(name, classes):
     model = _get_model_instance(name)
