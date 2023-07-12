@@ -88,7 +88,14 @@ class Camvid(data.Dataset):
 
         cw = np.where(cw >0, 1/cw, 0)
 
-        factor = np.ones(self.num_classes) 
+        factor = np.ones(self.num_classes)
+        factor[2] = 3
+        factor[6] = 3
+        # factor[7] = 2 
+        # factor[9] = 2 
+        # factor[10] = 2 
+        factor[11] = 2
+        
         cw *= factor 
         class_weights = torch.from_numpy(cw / np.sum(cw)).type('torch.FloatTensor')
         print('class_weights', class_weights)

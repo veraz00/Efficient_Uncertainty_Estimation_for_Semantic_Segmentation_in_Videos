@@ -1,1 +1,1 @@
-python3 scripts/train.py 
+python3 scripts/train.py --cfg_file_path /home/linlin/workspace/Efficient_p3/configs/default.yaml
