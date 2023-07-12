@@ -14,32 +14,41 @@ gpus:
 - 0
 model:
   is_bayesian: true
-  name: bayesian_tiramisu_lr0.01_b4
+  name: 20230712_night1_bayesian_tiramisu
   type: bayesian_tiramisu
 num_workers: 8
-output_dir: /home/linlin/workspace/Efficient_p3/outputs
-seed: 705
+output_dir: /home/linlin/workspace/Efficient_p3/outputs_warped
+seed: 712
 test:
   acqu_func: all
+  out_unct_dir: /home/linlin/workspace/Efficient_p3/outputs_warped/unct
+  out_unct_dir_r: /home/linlin/workspace/Efficient_p3/outputs_warped/unct_r
+  out_unct_dir_e: /home/linlin/workspace/Efficient_p3/outputs_warped/unct_e
+  out_unct_dir_b: /home/linlin/workspace/Efficient_p3/outputs_warped/unct_b
+  out_unct_dir_v: /home/linlin/workspace/Efficient_p3/outputs_warped/unct_v
   alpha_error: 0.5
   alpha_normal: 0.2
   error_thres: 40
   flow: DF
   flow_model_path: ''
   sample_num: 4
-  save_output: false
-  test_model_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/bayesian_tiramisu_lr0.001_b4/checkpoint.pth.tar
+  # save_output: false
+  test_model_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/20230712_night1_bayesian_tiramisu/best.pth.tar
   test_video: false
   use_warp: true
 training:
   batch_size: 2
-  epochs: 100
+  epochs: 200
   log_batch_interval: 100
-  lr: 0.005
-  opt: rms
-  resume: false
-  resume_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/bayesian_tiramisu_lr0.01_b4/checkpoint.pt
-  save_epoch_interval: 1
-  weight_decay: 0.0001
+  lr: 0.00001
+  opt: adam
+  resume: true
+  resume_path: /home/linlin/workspace/Efficient_p3/outputs/camvid/20230712_night1_bayesian_tiramisu/checkpoint.pth.tar
+  # start_epoch: 0
+  weight_decay: 0.00095
 validation:
-  save_epoch_interval: 50
+  log_epoch_interval: 50
+  save_epoch_interval: 1
+
+
+# sgd, lr, weifht_decay 
