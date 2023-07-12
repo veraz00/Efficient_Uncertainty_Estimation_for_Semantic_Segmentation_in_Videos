@@ -16,12 +16,12 @@ import configs.constants as C
 
 
 def train(args, dataloaders, model, optimizer, criterion, \
-          cur_loss, device, logger, output_dir):
+          cur_miou, device, logger, output_dir):
 
     torch.cuda.empty_cache()
     gc.collect()
     start = timeit.default_timer()
-    scheduler = ReduceLROnPlateau(optimizer, 'min')
+    # scheduler = ReduceLROnPlateau(optimizer, 'min')
 
     for epoch in range(args.training.start_epoch, args.training.epochs):
         logger.info(f'Start epoch {epoch}')
@@ -29,12 +29,15 @@ def train(args, dataloaders, model, optimizer, criterion, \
         for phase in ['train', 'valid']:
             if phase == 'train':
                 model.train()
-                start_training_time = timeit.default_timer()
+                
             else:
                 model.eval()
+                cm = ConfusionMatrix(task="multiclass", num_classes=args.dataset.num_classes, \
+                    ignore_index = args.dataset.void_class).to(device)
+
             print(f'start {phase} phase')
             
-            
+            start_training_time = timeit.default_timer()
             for i, (images, labels, img_path) in enumerate(dataloaders[phase]):
                 images = images.to(device)
                 labels = labels.long().to(device)
@@ -46,46 +49,66 @@ def train(args, dataloaders, model, optimizer, criterion, \
                     optimizer.step()
 
                 if phase == 'valid' and epoch % args.validation.save_epoch_interval == 0:
-                    scheduler.step(loss)
+                    # scheduler.step(loss)
+                    cm.update(outputs, labels)
 
-                    torch.save(model, os.path.join(output_dir, f'checkpoint.pt'))
-                    checkpoint_tar_path = os.path.join(
-                        output_dir, "checkpoint.pth.tar"
-                    )
-                    torch.save(
-                        {
-                            "loss": loss.item(),
-                            "state_dict": model.state_dict(),
-                            "optimizer": optimizer.state_dict(),
-                            "last_epoch":epoch
-                        },
-                        checkpoint_tar_path,
-                    )
-
-                    if loss.item() < cur_loss:
-                        torch.save(model, os.path.join(output_dir, "best.pt"))
-                        cur_loss = loss
-                        print(f"update the best.pt with {cur_loss}")
-
-                        best_tar_path = os.path.join(
-                            output_dir, "best.pth.tar"
-                        )
-                        torch.save(
-                            {
-                                "loss": cur_loss,
-                                "state_dict": model.state_dict(),
-                                "optimizer": optimizer.state_dict(),
-                                "last_epoch": epoch,
-                            },
-                            best_tar_path,
-                        )
-
-
-                if i > 0 and (i % args.training.log_batch_interval == 0 or i == len(dataloaders[phase])-1):
+                if (phase == 'train' and i > 0 and (i % args.training.log_batch_interval == 0)) or \
+                    (phase == 'valid' and i > 0 and (i % args.validation.log_epoch_interval == 0)) or \
+                    (i == len(dataloaders[phase])-1):
                     end_training_time = timeit.default_timer()
-                    logger.info(f'Phase: {phase}\tEpoch: [{epoch}][{i}/{len(dataloaders[phase])-1}]\tLoss {loss.item()}\tTraining Time:{end_training_time-start_training_time}')
+                    lr = optimizer.param_groups[-1]['lr']
+
+                    logger.info(f'Phase: {phase}\tEpoch: [{epoch}]\tBatch:[{i}/{len(dataloaders[phase])-1}]\t\
+                                lr:{lr}\tLoss {loss.item()}\t\
+                                Time:{end_training_time-start_training_time}')
                     start_training_time = end_training_time
                     
+
+
+        if epoch % args.validation.save_epoch_interval == 0:
+            metrics_valid, cm_valid = calculation_from_confusion_matrix(cm)
+            logger.info(cm_valid)
+            logger.info(metrics_valid)
+        
+            torch.save(model, os.path.join(output_dir, f'checkpoint.pt'))
+            checkpoint_tar_path = os.path.join(
+                output_dir, "checkpoint.pth.tar"
+            )
+
+            torch.save(
+                {
+                    "state_dict": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "last_epoch":epoch,
+                    "miou": metrics_valid['AVG_IOU'],
+                    'lr':optimizer.param_groups[-1]['lr']
+                },
+                checkpoint_tar_path,
+            )
+            logger.info(f'update {checkpoint_tar_path} on epoch{epoch}')
+
+            if metrics_valid['AVG_IOU'] > cur_miou:
+                torch.save(model, os.path.join(output_dir, "best.pt"))
+                cur_miou = metrics_valid['AVG_IOU'] 
+
+
+                best_tar_path = os.path.join(
+                    output_dir, "best.pth.tar"
+                )
+                torch.save(
+                    {
+                        "state_dict": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "last_epoch": epoch,
+                        "miou": metrics_valid['AVG_IOU'],
+                        'lr':optimizer.param_groups[-1]['lr']
+                    },
+                    best_tar_path,
+                )
+                logger.info(f'update {best_tar_path} on epoch{epoch} with miou={cur_miou}')
+
+                    
+
     end = timeit.default_timer()
     logger.info(f'seconds to the whole train:{end -start} s')
 
@@ -101,9 +124,9 @@ def get_test(args, model, split, device, logger, sv_pred = True):
     label_names = list(map(lambda x: x.replace(split, split + 'annot'), frame_names))
     model.eval()
 
-    if args.model == 'bayesian_tiramisu':
+    if args.model.type == 'bayesian_tiramisu':
         model.apply(set_dropout2d)
-        logger.info(f'use dropout2d in {args.model}')
+        logger.info(f'use dropout2d in {args.model.type}')
     
     # if args.flow == 'DF':
     #     DF = cv2.optflow.createOptFlow_DeepFlow()
@@ -118,28 +141,28 @@ def get_test(args, model, split, device, logger, sv_pred = True):
     #     flownet2.load_state_dict(model_dict)
     #     flownet2 = flownet2.to(device)
     
-    threshold = args.error_thres 
-    alpha_normal = args.alpha_normal 
-    alpha_error = args.alpha_error 
+    threshold = args.test.error_thres 
+    alpha_normal = args.test.alpha_normal 
+    alpha_error = args.test.alpha_error 
 
     prev_img, prev_output_mean = None, None
     gts, preds, uncts = [], [], []
     uncts_r, uncts_e, uncts_v, uncts_b = [], [], [], []
     video_name = ''
     inference_time = 0
-    cm = ConfusionMatrix(task="multiclass", num_classes=args.num_classes, \
-        ignore_index = args.void_class).to(device)
+    cm = ConfusionMatrix(task="multiclass", num_classes=args.dataset.num_classes, \
+        ignore_index = args.dataset.void_class).to(device)
 
-    
+    torch.cuda.empty_cache()
     for i, frame_name in enumerate(frame_names): # frame_name: train/01TP_30_1860/01TP_000030.png
         torch.cuda.synchronize()
         t1 = time.time()
-        img_path = os.path.join(args.dataset_dir, frame_name)
-        label_path = os.path.join(args.dataset_dir , label_names[i])
+        img_path = os.path.join(args.dataset.dataset_dir, frame_name)
+        label_path = os.path.join(args.dataset.dataset_dir , label_names[i])
         # img_gray = load_img(img_path, crop_size = (int(args.img_width), int(args.img_height)), \
         #                 return_gray = True)  # h, w
-        img = load_img(img_path, crop_size = (int(args.img_width), int(args.img_height))) # h, w, c
-        label = load_label(label_path, crop_size = (int(args.img_width), int(args.img_height))) # h, w, 
+        img = load_img(img_path, crop_size = (int(args.dataset.img_width), int(args.dataset.img_height))) # h, w, c
+        label = load_label(label_path, crop_size = (int(args.dataset.img_width), int(args.dataset.img_height))) # h, w, 
 
         img_tensor = image_process(img).to(device)  # b, c, w, h,
         label_tensor = label_process(label).to(device) # b, w, h
@@ -147,7 +170,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
 
         # img_tensor_or = image_process(img, normalize = False) # b, c, w, h,
 
-        T = args.sample_num
+        T = args.test.sample_num
         for t in range(T):
             output = F.softmax(model(img_tensor), dim = 1)
             if t == 0:
@@ -163,7 +186,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
         entropy_mean = entropy_mean / T # (1, 224, 224)
 
 
-        if args.use_warp: # the 2nd and other frames 
+        if args.test.use_warp: # the 2nd and other frames 
 
             
 
@@ -172,7 +195,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
                 reconstruction_loss = None 
 
             if prev_img is not None:
-                if args.flow == 'DF':
+                if args.test.flow == 'DF':
                     flow = cal_flow('DF', prev_img, img, \
                                     save_path = os.path.join(C.save_optical_flow, frame_name))  # h, w, 2
              
@@ -201,7 +224,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
             prev_output_mean = output_mean
 
 
-        if args.acqu_func != 'all':
+        if args.test.acqu_func != 'all':
             unc_map = acquisition_func(args.acqu_func, output_mean,\
                                    square_mean=square_mean, entropy_mean=entropy_mean) 
             unc_map = unc_map.squeeze().cpu().numpy()
@@ -237,7 +260,7 @@ def get_test(args, model, split, device, logger, sv_pred = True):
             if not os.path.exists(sv_path):
                 os.mkdir(sv_path)
             pred_index = np.argmax(torch2np(output_mean), axis=1).squeeze().T
-            save_pred(pred_index, label, img, sv_path, frame_name, args.num_classes)
+            save_pred(pred_index, label, img, sv_path, frame_name, args.dataset.num_classes)
 
 
         if i % 100 == 0:

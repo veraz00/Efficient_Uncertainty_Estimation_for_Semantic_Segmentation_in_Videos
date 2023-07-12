@@ -70,35 +70,37 @@ if __name__ == '__main__':
         model = nn.DataParallel(model, device_ids = cfg.gpus)
     model = model.to(device)
 
-    cfg.training.start_epoch = 0 
+
     if cfg.training.opt == 'sgd':
         optimizer = torch.optim.SGD(model.parameters(), lr = cfg.training.lr, momentum = 0.9, weight_decay = cfg.training.weight_decay)
     elif cfg.training.opt == 'rms':
         optimizer = torch.optim.RMSprop(model.parameters(), lr = cfg.training.lr, momentum = 0.9, weight_decay = cfg.training.weight_decay)
 
 
-    cur_loss = float('inf')
+    cur_miou = 0
 
     if cfg.training.resume:
         if os.path.exists(cfg.training.resume_path) == False:
             raise ValueError('resume_path should not be empty')
         logger.info('resuming finetune from {}'.format(cfg.training.resume_path))
-        checkpoint = torch.load(cfg.training.resume_path)
-        if checkpoint.endswith('.pth'):
-            cfg.training.start_epoch = checkpoint['epoch']
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            cur_loss = checkpoint['loss']
+        checkpoint = torch.load(cfg.training.resume_path, map_location= device)
+        if cfg.training.resume_path.endswith('.pth.tar'):
+            cfg.training.start_epoch = checkpoint['last_epoch']
+            model.load_state_dict(checkpoint
+                                  ['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            # cfg.training.lr = checkpoint['lr']
+            cur_miou = checkpoint['miou']
 
         else:
             model = torch.load(checkpoint)
 
-        logger.info('resuming finetune from {} done'.format(cfg.training.resume_path))
+        logger.info(f'resuming finetune from {cfg.training.resume_path} with miou={cur_miou}')
         logger.info('start_epoch: {}'.format(cfg.training.start_epoch))
     
     criterion = nn.CrossEntropyLoss(weight = torch.tensor(train_dataset.class_weights).to(device))
     train(cfg, dataloaders, model, optimizer, criterion, \
-          cur_loss, device, logger, output_dir)
+          cur_miou, device, logger, output_dir)
     logger.info('Finished training')
 
 

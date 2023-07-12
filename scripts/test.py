@@ -34,40 +34,41 @@ if __name__ == '__main__':
     logger.info(cfg)
 
 
-    test_dataset = dataset_dict(cfg.dataset_name)
+    test_dataset = dataset_dict(cfg.dataset.name)
 
 
-    dataset = test_dataset(root = cfg.dataset_dir,
+    dataset = test_dataset(root = cfg.dataset.dataset_dir,
                           split = 'val',
-                          img_size = (cfg.img_width, cfg.img_height),
+                          img_size = (cfg.dataset.img_width, cfg.dataset.img_height),
     )
-    logger.info('Test dataset: {} num_images: {}'.format(cfg.dataset_name, len(dataset)))
+    logger.info('Test dataset: {} num_images: {}'.format(cfg.dataset.name, len(dataset)))
 
 
-    if cfg.model == 'bayesian_tiramisu':
-        model = get_model(cfg.model, cfg.num_classes)
+    if cfg.model.type == 'bayesian_tiramisu':
+        model = get_model(cfg.model.type, cfg.dataset.num_classes)
 
 
 
-    device = torch.device('cuda' if torch.cuda.is_available() and cfg.device != 'cpu' else 'cpu')
-    if cfg.device != 'cpu' and len(cfg.gpus) > 1:
+    device = torch.device('cuda' if torch.cuda.is_available() and cfg.device == 'gpu' else 'cpu')
+    if device != 'cpu' and len(cfg.gpus) > 1:
         model = nn.DataParallel(model, device_ids = cfg.gpus)
 
 
-    # if os.path.exists(cfg.test_model_path) == False:
+    if os.path.exists(cfg.test.test_model_path) == False:
 
-    #     raise ValueError('test_model_path should not be empty')
-    # else:
-    #     logger.info('Test from {}'.format(cfg.test_model_path))
-    #     checkpoint = torch.load(cfg.test_model_path)
-    #     if cfg.test_model_path.endswith('.pth.tar'):
-    #         model.load_state_dict(checkpoint['state_dict'])
-    #     else:
-    #         model = torch.load(checkpoint)
+        raise ValueError('test_model_path should not be empty')
+    else:
+        logger.info('Test from {}'.format(cfg.test.test_model_path))
+        checkpoint = torch.load(cfg.test.test_model_path, map_location=device)
+        if cfg.test.test_model_path.endswith('.pth.tar'):
+            model.load_state_dict(checkpoint['state_dict'])
+        else:
+            model = torch.load(checkpoint)
     
     model.to(device)
+    icecream.ic(device)
     
-    logger.info('load test model from {} done'.format(cfg.test_model_path))
+    logger.info('load test model from {} done'.format(cfg.test.test_model_path))
 
     # run validate
     mean_IoU, IoU_array, pixel_acc, mean_acc = get_test(cfg, model, split = 'val', device = device, logger = logger, )

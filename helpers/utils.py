@@ -47,9 +47,9 @@ def set_dropout2d(m):
 
 def torch2np(val):
     try:
-        return val.item().detach().cpu()
+        return val.item().detach().cpu().numpy()
     except:
-        return val.detach().numpy()
+        return val.detach().cpu().numpy()
 
 def np2tensor(val, device = None):
     if device == None:
